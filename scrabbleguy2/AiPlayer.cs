@@ -8,67 +8,85 @@ namespace scrabbleguy
     {
         private ScrabbleDictionary scrabbleDictionary;
         private bool scoreAdded = false; // Flag to track if score has been added
-        private List<(int row, int col)> possibleStartingPoints = new List<(int row, int col)>(); // List of possible starting points
 
         public AIPlayer(string name, ScrabbleDictionary scrabbleDictionary) : base(name)
         {
             this.scrabbleDictionary = scrabbleDictionary;
-            InitializeStartingPoints();
-        }
-
-        private void InitializeStartingPoints()
-        {
-            // Initialize with the center of the board if it's the first move
-            possibleStartingPoints.Add((7, 7));
         }
 
         public void ExecuteBestMove(ScrabbleBoard board, TileBag tileBag, bool verbose = false)
         {
             Console.WriteLine($"{Name}'s turn (AI Player)");
+
+            if (Rack == null || !Rack.Any())
+            {
+                Console.WriteLine("AIPlayer Error: Rack is empty. Cannot make a move.");
+                return;
+            }
+
+            Console.WriteLine($"AIPlayer Rack: {string.Join(", ", Rack.Select(t => t.Letter))}");
             ShowRackForDebugging();
 
-            scoreAdded = false; // Reset the flag at the start of each turn
-
-            // If board is empty, place a word from the center
             if (board.IsBoardEmpty())
             {
+                Console.WriteLine("Board is empty. Attempting to place the first word from the center.");
                 PlaceFirstWordFromCenter(board, tileBag);
                 return;
             }
 
-            // Find all possible word placements
             var possibleWords = new List<(string word, int score, int row, int col, bool horizontal)>();
+            Console.WriteLine("Finding words around existing tiles...");
+            FindWordsAroundExistingTiles(board, possibleWords);
 
-            // Find words around existing tiles
-            FindWordsAroundStartingPoints(board, possibleWords);
-
-            // Sort possible words by score in descending order
-            possibleWords = possibleWords.OrderByDescending(w => w.score).ToList();
-
-            // Print all possible words and their scores
-            foreach (var wordPlacement in possibleWords)
+            Console.WriteLine($"Possible words found: {possibleWords.Count}");
+            if (!possibleWords.Any())
             {
-                Console.WriteLine($"Possible word: {wordPlacement.word}");
+                Console.WriteLine("AIPlayer Warning: No possible words found to play.");
             }
 
-            // Try to place the highest-scoring word
+            possibleWords = possibleWords.OrderByDescending(w => w.score).ToList();
+
+            for (int i = 0; i < Math.Min(5, possibleWords.Count); i++)
+            {
+                var wordPlacement = possibleWords[i];
+                Console.WriteLine($"Top word {i + 1}: {wordPlacement.word}, Score: {wordPlacement.score}");
+            }
+
             bool wordPlaced = false;
+            (string word, int row, int col, bool horizontal) placedWord = default;
             foreach (var wordPlacement in possibleWords)
             {
                 if (TryPlaceWord(board, tileBag, wordPlacement, verbose))
                 {
                     wordPlaced = true;
+                    placedWord = (wordPlacement.word, wordPlacement.row, wordPlacement.col, wordPlacement.horizontal);
                     break;
                 }
             }
 
             board.PrintBoard();
 
-            // If no word could be placed, exchange tiles
             if (!wordPlaced)
             {
-                Console.WriteLine("No valid word found. Exchanging tiles.");
+                Console.WriteLine("AIPlayer Warning: No valid word could be placed. Exchanging tiles.");
                 ExchangeTiles(tileBag);
+            }
+            else
+            {
+                int pointsEarned = AddPoints(placedWord.word.Select(c => new Tile(c, 0)).ToList(), placedWord.row, placedWord.col, placedWord.horizontal, board);
+
+                // Divide the points by the number of possible words
+                if (possibleWords.Count > 0)
+                {
+                    pointsEarned /= possibleWords.Count;
+                }
+
+                Console.WriteLine($"AIPlayer played the word '{placedWord.word}' for {pointsEarned} points.");
+            }
+
+            if (!wordPlaced)
+            {
+                Console.WriteLine("AIPlayer did not place a word this turn.");
             }
         }
 
@@ -100,15 +118,7 @@ namespace scrabbleguy
                             RemoveTileFromRack(tile);
                         }
 
-                        // Only add points if not already added
-                        if (!scoreAdded)
-                        {
-                            AddPoints(wordTiles, centerRow, centerCol, true, board);
-                            scoreAdded = true;
-                        }
-
                         RefillRack(tileBag);
-                        UpdateStartingPoints(centerRow, centerCol, wordTiles.Count, true);
                         return;
                     }
 
@@ -123,15 +133,7 @@ namespace scrabbleguy
                             RemoveTileFromRack(tile);
                         }
 
-                        // Only add points if not already added
-                        if (!scoreAdded)
-                        {
-                            AddPoints(wordTiles, centerRow, centerCol, false, board);
-                            scoreAdded = true;
-                        }
-
                         RefillRack(tileBag);
-                        UpdateStartingPoints(centerRow, centerCol, wordTiles.Count, false);
                         return;
                     }
                 }
@@ -143,31 +145,6 @@ namespace scrabbleguy
 
             // If no word can be placed, exchange tiles
             ExchangeTiles(tileBag);
-        }
-
-        private void UpdateStartingPoints(int startRow, int startCol, int wordLength, bool horizontal)
-        {
-            // Remove the starting point where the word was placed
-            possibleStartingPoints.Remove((startRow, startCol));
-
-            // Add new starting points adjacent to the newly placed word
-            for (int i = 0; i < wordLength; i++)
-            {
-                int row = horizontal ? startRow : startRow + i;
-                int col = horizontal ? startCol + i : startCol;
-
-                // Add adjacent points
-                if (horizontal)
-                {
-                    if (row > 0) possibleStartingPoints.Add((row - 1, col));
-                    if (row < 14) possibleStartingPoints.Add((row + 1, col));
-                }
-                else
-                {
-                    if (col > 0) possibleStartingPoints.Add((row, col - 1));
-                    if (col < 14) possibleStartingPoints.Add((row, col + 1));
-                }
-            }
         }
 
         private IEnumerable<string> GenerateAllWordCombinations(List<Tile> rack)
@@ -188,11 +165,13 @@ namespace scrabbleguy
         private bool TryPlaceWord(ScrabbleBoard board, TileBag tileBag,
             (string word, int score, int row, int col, bool horizontal) wordPlacement, bool verbose = false)
         {
-            // Extract word details
             string wordToPlace = wordPlacement.word;
             int row = wordPlacement.row;
             int col = wordPlacement.col;
             bool horizontal = wordPlacement.horizontal;
+
+            Console.WriteLine($"AIPlayer attempting to place word: {wordToPlace} at ({row},{col}) " +
+                              $"{(horizontal ? "horizontally" : "vertically")}");
 
             List<Tile> wordTiles = new List<Tile>();
 
@@ -202,6 +181,7 @@ namespace scrabbleguy
                 Tile tile = Rack.FirstOrDefault(t => t.Letter == c);
                 if (tile == null)
                 {
+                    Console.WriteLine($"AIPlayer Warning: Cannot form word '{wordToPlace}' with current rack.");
                     return false; // Cannot form word with current rack
                 }
                 wordTiles.Add(tile);
@@ -221,42 +201,66 @@ namespace scrabbleguy
                         RemoveTileFromRack(tile);
                     }
 
-                    // Only add points if not already added
-                    if (!scoreAdded)
-                    {
-                        AddPoints(wordTiles, row, col, horizontal, board);
-                        scoreAdded = true;
-                    }
-
                     // Refill rack
                     RefillRack(tileBag);
 
                     Console.WriteLine($"AI placed word: {wordToPlace} at ({row},{col}) " +
                                       $"{(horizontal ? "horizontally" : "vertically")}");
-                    UpdateStartingPoints(row, col, wordTiles.Count, horizontal);
                     return true;
+                }
+                else
+                {
+                    Console.WriteLine($"AIPlayer Warning: Cannot place word '{wordToPlace}' at ({row},{col}).");
                 }
             }
             catch (Exception ex)
             {
                 if (verbose)
                 {
-                    Console.WriteLine($"Error placing word: {ex.Message}");
+                    Console.WriteLine($"Error placing word '{wordToPlace}': {ex.Message}");
                 }
             }
 
             return false;
         }
-
-        private void FindWordsAroundStartingPoints(ScrabbleBoard board,
+        private void FindWordsAroundExistingTiles(ScrabbleBoard board,
             List<(string word, int score, int row, int col, bool horizontal)> possibleWords)
         {
-            // Generate possible words around each starting point
-            foreach (var (row, col) in possibleStartingPoints)
+            // Find all placed tiles
+            var placedTiles = new List<(int row, int col)>();
+            for (int row = 0; row < 15; row++)
+            {
+                for (int col = 0; col < 15; col++)
+                {
+                    if (board.GetBoard()[row, col] != null)
+                    {
+                        placedTiles.Add((row, col));
+                    }
+                }
+            }
+
+            // Generate possible words around each placed tile
+            foreach (var (tileRow, tileCol) in placedTiles)
             {
                 // Check adjacent empty spaces in all 4 directions
-                FindPossibleWordsFromPosition(board, row, col, true, possibleWords);   // Horizontal
-                FindPossibleWordsFromPosition(board, row, col, false, possibleWords);  // Vertical
+                FindPossibleWordsFromPosition(board, tileRow, tileCol, true, possibleWords);   // Horizontal
+                FindPossibleWordsFromPosition(board, tileRow, tileCol, false, possibleWords);  // Vertical
+            }
+
+            if (!possibleWords.Any())
+            {
+                Console.WriteLine("AIPlayer Warning: No possible words found around existing tiles.");
+            }
+            else
+            {
+                // Debug: Print all possible words found
+                Console.WriteLine("All possible words found:");
+                foreach (var wordPlacement in possibleWords)
+                {
+                    Console.WriteLine($"Word: {wordPlacement.word}, Score: {wordPlacement.score}, " +
+                                      $"Row: {wordPlacement.row}, Col: {wordPlacement.col}, " +
+                                      $"Horizontal: {wordPlacement.horizontal}");
+                }
             }
         }
 
@@ -280,28 +284,31 @@ namespace scrabbleguy
                     if (scrabbleDictionary.IsValidWord(word))
                     {
                         // Try to place the word across existing tiles
-                        int bestScore = TryPlaceWordAroundTile(board, word, anchorRow, anchorCol, horizontal);
+                        var result = TryPlaceWordAroundTile(board, word, anchorRow, anchorCol, horizontal);
 
-                        if (bestScore > 0)
+                        if (result.score > 0)
                         {
-                            possibleWords.Add((word, bestScore, anchorRow, anchorCol, horizontal));
+                            possibleWords.Add((word, result.score, result.startRow, result.startCol, horizontal));
+
+                            // Debug: Log the word being added
+                            Console.WriteLine($"Found possible word: {word}, Score: {result.score}, " +
+                                              $"Row: {result.startRow}, Col: {result.startCol}, " +
+                                              $"Horizontal: {horizontal}");
                         }
                     }
                 }
             }
         }
 
-        private int TryPlaceWordAroundTile(ScrabbleBoard board, string word, int anchorRow, int anchorCol, bool horizontal)
+        private (int score, int startRow, int startCol) TryPlaceWordAroundTile(ScrabbleBoard board, string word, int anchorRow, int anchorCol, bool horizontal)
         {
-            // Find the range of possible placements
-            int wordScore = 0;
             List<Tile> potentialWordTiles = new List<Tile>();
 
             // Convert word to tiles from rack
             foreach (char c in word)
             {
                 Tile tile = Rack.FirstOrDefault(t => t.Letter == c);
-                if (tile == null) return 0;
+                if (tile == null) return (0, 0, 0);
                 potentialWordTiles.Add(tile);
             }
 
@@ -311,44 +318,42 @@ namespace scrabbleguy
                 int startRow = horizontal ? anchorRow : anchorRow - offset;
                 int startCol = horizontal ? anchorCol - offset : anchorCol;
 
+                // Skip invalid starting positions
+                if (startRow < 0 || startCol < 0) continue;
+
                 // Ensure we're using the correct tile at the anchor point
-                if (horizontal && startCol + offset >= anchorCol &&
-                    startCol + offset < anchorCol + 1 &&
+                bool canIntersect = false;
+
+                if (horizontal && startCol + offset == anchorCol && startRow == anchorRow &&
                     board.GetBoard()[anchorRow, anchorCol] != null &&
                     word[offset] == board.GetBoard()[anchorRow, anchorCol].Letter)
                 {
-                    // Try to place the word without scoring
-                    try
-                    {
-                        if (board.CanPlaceWordWithoutScoring(potentialWordTiles, startRow, startCol, horizontal, this))
-                        {
-                            // Calculate potential score
-                            wordScore = CalculateWordScore(potentialWordTiles, startRow, startCol, horizontal, board);
-                            return wordScore;
-                        }
-                    }
-                    catch { }
+                    canIntersect = true;
                 }
-                else if (!horizontal && startRow + offset >= anchorRow &&
-                         startRow + offset < anchorRow + 1 &&
+                else if (!horizontal && startRow + offset == anchorRow && startCol == anchorCol &&
                          board.GetBoard()[anchorRow, anchorCol] != null &&
                          word[offset] == board.GetBoard()[anchorRow, anchorCol].Letter)
                 {
-                    // Try to place the word without scoring
+                    canIntersect = true;
+                }
+
+                if (canIntersect)
+                {
+                    // Try to place the word
                     try
                     {
-                        if (board.CanPlaceWordWithoutScoring(potentialWordTiles, startRow, startCol, horizontal, this))
+                        if (board.CanPlaceWord(potentialWordTiles, startRow, startCol, horizontal, this))
                         {
                             // Calculate potential score
-                            wordScore = CalculateWordScore(potentialWordTiles, startRow, startCol, horizontal, board);
-                            return wordScore;
+                            int score = CalculateWordScore(potentialWordTiles, startRow, startCol, horizontal, board);
+                            return (score, startRow, startCol);
                         }
                     }
                     catch { }
                 }
             }
 
-            return 0;
+            return (0, 0, 0);
         }
 
         private int CalculateWordScore(List<Tile> wordTiles, int startRow, int startCol, bool horizontal, ScrabbleBoard board)

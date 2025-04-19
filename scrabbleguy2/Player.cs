@@ -45,10 +45,17 @@ namespace scrabbleguy
         // Refill the player's rack to 7 tiles
         public void RefillRack(TileBag tileBag)
         {
+            Console.WriteLine($"{Name} is refilling their rack...");
+
             while (Rack.Count < MaxTilesInRack && !tileBag.IsEmpty())
             {
-                DrawTile(tileBag);
+                Tile drawnTile = tileBag.DrawTile();
+                Rack.Add(drawnTile);
+                Console.WriteLine($"Drew tile: {drawnTile.Letter} (Score: {drawnTile.Score})");
             }
+
+            Console.WriteLine($"{Name}'s rack after refill:");
+            ShowRack();
         }
         public void RefillRack(List<Tile> tiles)
         {
@@ -69,33 +76,37 @@ namespace scrabbleguy
         }
 
         // Manage the score from a given word, considering multipliers
-        public void AddPoints(List<Tile> wordTiles, int startRow, int startCol, bool horizontal, ScrabbleBoard board)
+
+       
+        public int AddPoints(List<Tile> wordTiles, int startRow, int startCol, bool horizontal, ScrabbleBoard board)
         {
-            int roundPoints = 0;
-            int wordMultiplier = 1; // This will hold the cumulative word multiplier
-            if (wordTiles.Count == 7) // Handles bingos (turns where a player uses all of their rack in a word)
-            {
-                Console.WriteLine("BINGO!!!!");
-                roundPoints += 50;
-            }
+            int score = 0;
+            int wordMultiplier = 1;
+
             for (int i = 0; i < wordTiles.Count; i++)
             {
-                Tile tile = wordTiles[i];
                 int row = horizontal ? startRow : startRow + i;
                 int col = horizontal ? startCol + i : startCol;
 
-                int tilePoints = tile.Score;
-                tilePoints = ApplyLetterMultiplier(row, col, tilePoints);
-                roundPoints += tilePoints;
+                // Apply letter multipliers
+                int tileScore = wordTiles[i].Score;
+                tileScore = ApplyLetterMultiplier(row, col, tileScore);
+                score += tileScore;
+
+                // Apply word multipliers
                 wordMultiplier *= ApplyWordMultiplier(row, col);
             }
 
-            // Apply the word multipliers to the total score
-            roundPoints *= wordMultiplier;
+            score *= wordMultiplier;
 
-            // Add the points to the player's score
-            score += roundPoints;
-            Console.WriteLine($"{Name} scored {roundPoints} points this turn. Total Score: {score}");
+            // Add bingo bonus if all 7 tiles are used
+            if (wordTiles.Count == 7)
+            {
+                score += 50;
+            }
+
+            this.score += score; // Update the player's total score
+            return score;
         }
 
         // Apply letter multipliers
@@ -129,7 +140,7 @@ namespace scrabbleguy
                 case (14, 11):
                     if (!(this is AIPlayer))
                     {
-                        Console.WriteLine("Double Letter!!");
+                        LogMessage("Double Letter!!");
                     }
                     return score * 2;
                 case (1, 5):
@@ -146,7 +157,7 @@ namespace scrabbleguy
                 case (13, 9):
                     if (!(this is AIPlayer))
                     {
-                        Console.WriteLine("Triple Letter!!!");
+                        LogMessage("Triple Letter!!!");
                     }
                     return score * 3;
                 default:
@@ -168,7 +179,7 @@ namespace scrabbleguy
                 case (12, 12):
                     if (!(this is AIPlayer))
                     {
-                        Console.WriteLine("Double Word!!");
+                        LogMessage("Double Word!!");
                     }
                     return 2; // Double the word score
                 case (0, 0):
@@ -181,7 +192,7 @@ namespace scrabbleguy
                 case (14, 14):
                     if (!(this is AIPlayer))
                     {
-                        Console.WriteLine("Triple Word!!!");
+                        LogMessage("Triple Word!!!");
                     }
                     return 3; // Triple the word score
                 default:
@@ -325,6 +336,16 @@ namespace scrabbleguy
         public List<Tile> GetRack()
         {
             return Rack;
+        }
+        protected void LogMessage(string message)
+        {
+            // Add the message to a log (e.g., for GUI or testing purposes)
+            // This replaces direct console output
+        }
+        private void AddPointsToTotal(List<Tile> wordTiles, int startRow, int startCol, bool horizontal, ScrabbleBoard board)
+        {
+            // Call AddPoints only to update the total score
+            AddPoints(wordTiles, startRow, startCol, horizontal, board);
         }
     }
 }

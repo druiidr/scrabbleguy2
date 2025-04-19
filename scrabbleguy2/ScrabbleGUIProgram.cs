@@ -14,11 +14,11 @@ namespace scrabbleguy
             // Ask the user if they want to play against AI
             if (MessageBox.Show("Play against AI?", "Game Mode", MessageBoxButtons.YesNo) == DialogResult.Yes)
             {
-                Application.Run(new ScrabbleGUI(true));
+                Application.Run(new ScrabbleGUI());
             }
             else
             {
-                Application.Run(new ScrabbleGUI(false));
+                Application.Run(new ScrabbleGUI());
             }
         }
     }

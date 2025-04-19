@@ -57,39 +57,43 @@ namespace scrabbleguy
 
         // CanPlaceWord: Validate that the word can be placed considering both rack and board tiles
 
+
         public bool CanPlaceWord(List<Tile> wordTiles, int wordRow, int wordCol, bool horizontal, Player player)
         {
+            // Tracks whether the word is attached to existing tiles
             bool isAttached = false;
+
+            // Handle first word on empty board
             if (isEmpty)
             {
+                // Special case: First word must go through center
+                if (!(wordRow <= 7 && wordRow + (horizontal ? 0 : wordTiles.Count - 1) >= 7 &&
+                      wordCol <= 7 && wordCol + (horizontal ? wordTiles.Count - 1 : 0) >= 7))
+                {
+                    return false; // First word must go through the center
+                }
+
                 isEmpty = false;
                 isAttached = true;
             }
 
-            // Validate if the main word is a valid word
-            if (!WordHandling.ValidWord(wordTiles))
-                return false;
+            // Find the complete word being formed (including existing tiles)
 
-            // Create a list to hold the combined word tiles (including existing tiles on the board)
-            List<Tile> combinedWordTiles = new List<Tile>(wordTiles);
-
-            // Find the complete word that's being formed (including adjacent tiles)
-            List<Tile> fullMainWord = new List<Tile>();
+            // 1. Find existing tiles before the start position
             int startRow = wordRow;
             int startCol = wordCol;
+            List<Tile> fullWordTiles = new List<Tile>();
 
-            // First, check for any tiles before the start position
             if (horizontal)
             {
                 int col = wordCol - 1;
                 while (col >= 0 && board[wordRow, col] != null)
                 {
                     isAttached = true;
-                    fullMainWord.Insert(0, board[wordRow, col]);
+                    fullWordTiles.Insert(0, board[wordRow, col]);
+                    startCol = col; // Update the starting column
                     col--;
                 }
-                // Starting position for main word
-                startCol = col + 1;
             }
             else // vertical
             {
@@ -97,142 +101,152 @@ namespace scrabbleguy
                 while (row >= 0 && board[row, wordCol] != null)
                 {
                     isAttached = true;
-                    fullMainWord.Insert(0, board[row, wordCol]);
+                    fullWordTiles.Insert(0, board[row, wordCol]);
+                    startRow = row; // Update the starting row
                     row--;
                 }
-                // Starting position for main word
-                startRow = row + 1;
             }
 
-            // Add the word tiles being placed (or use board tiles if there's an overlap)
+            // 2. Add the tiles being placed (accounting for any overlapping tiles)
             for (int i = 0; i < wordTiles.Count; i++)
             {
                 int tileRow = horizontal ? wordRow : wordRow + i;
                 int tileCol = horizontal ? wordCol + i : wordCol;
 
-                // Check if there's already a tile on the board at this position
+                // Check board boundaries
+                if (tileRow >= BoardSize || tileCol >= BoardSize)
+                    return false;
+
+                // Handle overlap with existing tiles
                 if (board[tileRow, tileCol] != null)
                 {
                     isAttached = true;
+
+                    // Ensure the overlapping tile matches
                     if (board[tileRow, tileCol].Letter != wordTiles[i].Letter)
-                    {
-                        if (!(player is AIPlayer))
-                        {
-                            Console.WriteLine("Can't place a tile on an existing tile!!");
-                        }
                         return false;
-                    }
-                    fullMainWord.Add(board[tileRow, tileCol]);
+
+                    // Use the existing tile in our word
+                    fullWordTiles.Add(board[tileRow, tileCol]);
                 }
                 else
                 {
-                    fullMainWord.Add(wordTiles[i]);
+                    // Add the new tile from the player's hand
+                    fullWordTiles.Add(wordTiles[i]);
                 }
 
-                // Check for perpendicular words
+                // Check for perpendicular words formed
                 if (horizontal)
                 {
                     if (HasAdjacentTilesVertically(tileRow, tileCol))
                     {
                         isAttached = true;
-                        List<Tile> newVerticalWord = FormVerticalWord(tileRow, tileCol);
-                        if (!WordHandling.ValidWord(newVerticalWord))
-                            return false; // Invalid perpendicular word
 
-                        string verticalWordStr = WordHandling.TilesToWord(newVerticalWord);
-                        if (!playedWords.Contains(verticalWordStr))
+                        // Form and validate the perpendicular word
+                        List<Tile> perpWord = FormVerticalWord(tileRow, tileCol);
+
+                        if (!WordHandling.ValidWord(perpWord))
+                            return false;
+
+                        // Score the perpendicular word if it's new
+                        string perpWordStr = WordHandling.TilesToWord(perpWord);
+                        if (!playedWords.Contains(perpWordStr))
                         {
-                            // Add points for the new vertical word and add it to playedWords
-                            player.AddPoints(newVerticalWord, GetVerticalWordStart(tileRow, tileCol), tileCol, false, this);
-                            playedWords.Add(verticalWordStr);
+                            int vertStartRow = GetVerticalWordStart(tileRow, tileCol);
+                            player.AddPoints(perpWord, vertStartRow, tileCol, false, this);
+                            playedWords.Add(perpWordStr);
                         }
                     }
                 }
-                else
+                else // vertical
                 {
                     if (HasAdjacentTilesHorizontally(tileRow, tileCol))
                     {
                         isAttached = true;
-                        List<Tile> newHorizontalWord = FormHorizontalWord(tileRow, tileCol);
-                        if (!WordHandling.ValidWord(newHorizontalWord))
-                            return false; // Invalid perpendicular word
 
-                        string horizontalWordStr = WordHandling.TilesToWord(newHorizontalWord);
-                        if (!playedWords.Contains(horizontalWordStr))
+                        // Form and validate the perpendicular word
+                        List<Tile> perpWord = FormHorizontalWord(tileRow, tileCol);
+
+                        if (!WordHandling.ValidWord(perpWord))
+                            return false;
+
+                        // Score the perpendicular word if it's new
+                        string perpWordStr = WordHandling.TilesToWord(perpWord);
+                        if (!playedWords.Contains(perpWordStr))
                         {
-                            // Add points for the new horizontal word and add it to playedWords
-                            player.AddPoints(newHorizontalWord, tileRow, GetHorizontalWordStart(tileRow, tileCol), true, this);
-                            playedWords.Add(horizontalWordStr);
+                            int horizStartCol = GetHorizontalWordStart(tileRow, tileCol);
+                            player.AddPoints(perpWord, tileRow, horizStartCol, true, this);
+                            playedWords.Add(perpWordStr);
                         }
                     }
                 }
             }
 
-            // Now check for any tiles after the end position
+            // 3. Find existing tiles after the end of the word
             if (horizontal)
             {
-                int endCol = wordCol + wordTiles.Count - 1;
-                int col = endCol + 1;
+                int col = wordCol + wordTiles.Count;
                 while (col < BoardSize && board[wordRow, col] != null)
                 {
                     isAttached = true;
-                    fullMainWord.Add(board[wordRow, col]);
+                    fullWordTiles.Add(board[wordRow, col]);
                     col++;
                 }
             }
             else // vertical
             {
-                int endRow = wordRow + wordTiles.Count - 1;
-                int row = endRow + 1;
+                int row = wordRow + wordTiles.Count;
                 while (row < BoardSize && board[row, wordCol] != null)
                 {
                     isAttached = true;
-                    fullMainWord.Add(board[row, wordCol]);
+                    fullWordTiles.Add(board[row, wordCol]);
                     row++;
                 }
             }
 
-            // If we've attached to existing tiles, we need to validate the full word
-            if (isAttached && fullMainWord.Count > wordTiles.Count)
-            {
-                if (!WordHandling.ValidWord(fullMainWord))
-                {
-                    if (!(player is AIPlayer))
-                    {
-                        Console.WriteLine("Invalid combined word: " + WordHandling.TilesToWord(fullMainWord));
-                    }
-                    return false;
-                }
-
-                // Add points for the main word if it's not already played
-                string mainWordStr = WordHandling.TilesToWord(fullMainWord);
-                if (!playedWords.Contains(mainWordStr))
-                {
-                    player.AddPoints(fullMainWord, startRow, startCol, horizontal, this);
-                    playedWords.Add(mainWordStr);
-                }
-            }
-            else if (!isAttached)
-            {
-                // If the word is not attached to any existing tiles, it's invalid
-                // unless it's the first word on the board
+            // If not connected to any existing tiles and not the first word, invalid
+            if (!isAttached && !isEmpty)
                 return false;
-            }
-            else
+
+            // Validate the main word
+            if (!WordHandling.ValidWord(fullWordTiles))
+                return false;
+
+            // Add points for the main word if it's valid
+            string mainWordStr = WordHandling.TilesToWord(fullWordTiles);
+            if (!playedWords.Contains(mainWordStr))
             {
-                // It's attached but the full word is just our word
-                // Make sure to add points and add to played words
-                string mainWordStr = WordHandling.TilesToWord(fullMainWord);
-                if (!playedWords.Contains(mainWordStr))
-                {
-                    player.AddPoints(fullMainWord, startRow, startCol, horizontal, this);
-                    playedWords.Add(mainWordStr);
-                }
+                player.AddPoints(fullWordTiles, startRow, startCol, horizontal, this);
+                playedWords.Add(mainWordStr);
             }
 
             return true;
         }
 
+
+        private bool CoversCenterSquare(int wordRow, int wordCol, int wordLength, bool horizontal)
+        {
+            int centerRow = BoardSize / 2;
+            int centerCol = BoardSize / 2;
+
+            if (horizontal)
+            {
+                return wordRow == centerRow && wordCol <= centerCol && wordCol + wordLength > centerCol;
+            }
+            else
+            {
+                return wordCol == centerCol && wordRow <= centerRow && wordRow + wordLength > centerRow;
+            }
+        }
+
+        private bool HasAdjacentTiles(int row, int col)
+        {
+            // Check for adjacent tiles in all four directions
+            return (row > 0 && GetTileAt(row - 1, col) != null) || // Above
+                   (row < BoardSize - 1 && GetTileAt(row + 1, col) != null) || // Below
+                   (col > 0 && GetTileAt(row, col - 1) != null) || // Left
+                   (col < BoardSize - 1 && GetTileAt(row, col + 1) != null); // Right
+        }
         // Helper methods to get the start position of perpendicular words
         private int GetVerticalWordStart(int row, int col)
         {
@@ -430,19 +444,30 @@ namespace scrabbleguy
         }
         public void PlaceWord(List<Tile> wordTiles, int startRow, int startCol, bool horizontal)
         {
+            int row = startRow;
+            int col = startCol;
+
+            // Clear the isEmpty flag when placing a word
+            isEmpty = false;
+
             for (int i = 0; i < wordTiles.Count; i++)
             {
-                int row = horizontal ? startRow : startRow + i;
-                int col = horizontal ? startCol + i : startCol;
+                if (board[row, col] == null) // Only place tile if the spot is empty
+                {
+                    board[row, col] = wordTiles[i];
+                }
 
-                board[row, col] = wordTiles[i];
+                if (horizontal)
+                    col++;
+                else
+                    row++;
             }
 
-            // Mark the board as no longer empty
-            isEmpty = false;
+            // Add the word to played words
+            playedWords.Add(WordHandling.TilesToWord(wordTiles));
         }
 
-            public bool ValidateNewWordWithExistingTiles(int row, int col, bool horizontal, List<Tile> placedTiles)
+        public bool ValidateNewWordWithExistingTiles(int row, int col, bool horizontal, List<Tile> placedTiles)
             {
                 // Validate main word
                 if (!WordHandling.ValidWord(placedTiles))
@@ -508,17 +533,23 @@ namespace scrabbleguy
             List<Tile> word = new List<Tile>();
 
             // Move up to the start of the word
-            int tempRow = row;
-            while (tempRow > 0 && board[tempRow - 1, col] != null)
+            int startRow = row;
+            while (startRow > 0 && board[startRow - 1, col] != null)
             {
-                tempRow--;
+                startRow--;
             }
 
             // Collect tiles from the start of the word downward
-            while (tempRow <= 14 && board[tempRow, col] != null)
+            for (int r = startRow; r < BoardSize; r++)
             {
-                word.Add(board[tempRow, col]);
-                tempRow++;
+                if (board[r, col] != null)
+                {
+                    word.Add(board[r, col]);
+                }
+                else
+                {
+                    break; // End of the word
+                }
             }
 
             return word;
@@ -529,22 +560,27 @@ namespace scrabbleguy
             List<Tile> word = new List<Tile>();
 
             // Move left to the start of the word
-            int tempCol = col;
-            while (tempCol > 0 && board[row, tempCol - 1] != null)
+            int startCol = col;
+            while (startCol > 0 && board[row, startCol - 1] != null)
             {
-                tempCol--;
+                startCol--;
             }
 
             // Collect tiles from the start of the word to the right
-            while (tempCol <= 14 && board[row, tempCol] != null)
+            for (int c = startCol; c < BoardSize; c++)
             {
-                word.Add(board[row, tempCol]);
-                tempCol++;
+                if (board[row, c] != null)
+                {
+                    word.Add(board[row, c]);
+                }
+                else
+                {
+                    break; // End of the word
+                }
             }
 
             return word;
         }
-
         public void PrintPlayedWords()
         {
             foreach (string word in playedWords)
@@ -552,6 +588,12 @@ namespace scrabbleguy
                 Console.Write(word + ", ");
             }
             Console.WriteLine();
+        }
+        public Tile GetTileAt(int row, int col)
+        {
+            if (row < 0 || row >= BoardSize || col < 0 || col >= BoardSize)
+                return null; // Out of bounds
+            return board[row, col];
         }
     }
 }

@@ -50,20 +50,41 @@
             {
                 tiles.Add(new Tile(letter, score));
             }
+            LogMessage($"Added {count} tiles of letter '{letter}' with score {score} to the bag.");
+        }
+
+        public void AddTile(Tile tile)
+        {
+            tiles.Add(tile);
         }
 
         // Draw a random tile from the bag
         public Tile DrawTile()
         {
-            if (tiles.Count == 0) return null; // No more tiles in the bag
+            if (tiles.Count == 0)
+            {
+                LogMessage("Tile bag is empty. No tile drawn.");
+                return null;
+            }
+
             int index = random.Next(tiles.Count);
             Tile drawnTile = tiles[index];
             tiles.RemoveAt(index);
+            LogMessage($"Drew tile '{drawnTile.Letter}' with score {drawnTile.Score} from the bag.");
             return drawnTile;
         }
         public bool IsEmpty()
         {
             return tiles.Count == 0;
+        }
+        public int GetRemainingTilesCount()
+        {
+            return tiles.Count;
+        }
+        private void LogMessage(string message)
+        {
+            // Add the message to a log (e.g., for GUI or testing purposes)
+            // This replaces direct console output
         }
     }
 }

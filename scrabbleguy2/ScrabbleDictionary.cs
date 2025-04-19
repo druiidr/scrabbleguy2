@@ -34,6 +34,31 @@ namespace scrabbleguy
                 FlippedWordTrie.ReverseInsert(word);
             }
         }
+        public List<string> GetWordsMatchingPattern(string pattern)
+        {
+            List<string> matchingWords = new List<string>();
+
+            foreach (string word in validWords)
+            {
+                if (word.Length == pattern.Length)
+                {
+                    bool isMatch = true;
+                    for (int i = 0; i < pattern.Length; i++)
+                    {
+                        if (pattern[i] != '.' && pattern[i] != word[i])
+                        {
+                            isMatch = false;
+                            break;
+                        }
+                    }
+
+                    if (isMatch)
+                        matchingWords.Add(word);
+                }
+            }
+
+            return matchingWords;
+        }
 
         public bool IsValidWord(string word)
         {
